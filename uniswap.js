@@ -1,5 +1,7 @@
 require("dotenv").config()
 const JSBI = require('jsbi');
+// var JSBI = require('jsbi-compat');
+//var bigInt = require("big-integer");
 const Web3 = require('web3');
 const Tx = require('ethereumjs-tx')
 const abis = require('./abis');
@@ -13,6 +15,11 @@ const web3 = new Web3(
 const { address: admin } = web3.eth.accounts.wallet.add(process.env.PRIVATE_KEY);
 const myAddress = process.env.WALLET_ADDRESS;
 
+
+const IUniswapV2Router02 = require('./abis/uniswapV2.json');
+const  swapExactTokensForTokensContract = new web3.eth.Contract(IUniswapV2Router02, "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D");
+
+
 const chainId = ChainId.MAINNET;
 const USDTAddress = '0xdac17f958d2ee523a2206206994597c13d831ec7';
 const YFIAddress = '0x0bc529c00C6401aEF6D220BE8C6Ea1667F6Ad93e';
@@ -22,6 +29,15 @@ function toHex(currencyAmount) {
 }
 
 const swapUSDTtoYFI = async (amount) => {
+
+    var USDTAmountinWei = web3.utils.toWei("1000", "ether").toString()
+    const ERC20ABI = require('./abis/ERC20.json');
+
+    // Approve the LendingPoolCore address with the YFI contract
+    const USDTContract = new web3.eth.Contract(ERC20ABI, USDTAddress)
+    await USDTContract.methods
+        .approve(swapExactTokensForTokensContract, USDTAmountinWei)
+
 
     const usdt = await Fetcher.fetchTokenData(chainId, USDTAddress, undefined, "USDT", "USDT Token");
     const yfi = await Fetcher.fetchTokenData(chainId, YFIAddress, undefined, "YFI", "YFI Token");
@@ -54,7 +70,8 @@ const swapUSDTtoYFI = async (amount) => {
     const uniswap = new ethers.Contract(
         '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
         ['function swapExactTokensForTokens(uint amountIn,uint amountOutMin,address[] calldata path,address to,uint deadline) external returns (uint[] memory amounts)'],
-        account);
+        account)
+
 
     console.log('Sending transaction...')
 
