@@ -4,8 +4,6 @@ const JSBI = require('jsbi');
 //var bigInt = require("big-integer");
 const Web3 = require('web3');
 const Tx = require('ethereumjs-tx')
-const abis = require('./abis');
-const { mainnet: addresses } = require('./addresses');
 const ethers = require('ethers');
 const { ChainId, Fetcher, WETH, Route, Trade, TokenAmount, TradeType, Percent } = require('@uniswap/sdk');
 

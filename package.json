@@ -1,0 +1,26 @@
+{
+  "name": "uniswap-usdt-yfi",
+  "version": "1.0.0",
+  "description": "In node env, swap between YFI and USTD using uniswap",
+  "main": "uniswap.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pmannle/uniswap-usdt-yfi.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/pmannle/uniswap-usdt-yfi/issues"
+  },
+  "homepage": "https://github.com/pmannle/uniswap-usdt-yfi#readme",
+  "dependencies": {
+    "dotenv": "^8.2.0",
+    "ethereumjs-tx": "^2.1.2",
+    "ethers": "^5.0.17",
+    "jsbi": "^3.1.4",
+    "web3": "^1.3.0"
+  }
+}
