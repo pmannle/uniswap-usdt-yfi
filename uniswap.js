@@ -1,7 +1,5 @@
 require("dotenv").config()
 const JSBI = require('jsbi');
-// var JSBI = require('jsbi-compat');
-//var bigInt = require("big-integer");
 const Web3 = require('web3');
 const Tx = require('ethereumjs-tx')
 const ethers = require('ethers');
@@ -13,18 +11,17 @@ const web3 = new Web3(
 const { address: admin } = web3.eth.accounts.wallet.add(process.env.PRIVATE_KEY);
 const myAddress = process.env.WALLET_ADDRESS;
 
+const provider = ethers.getDefaultProvider('mainnet', {
+    infura: process.env.INFURA_URL
+});
 
 const IUniswapV2Router02 = require('./abis/uniswapV2.json');
 const  swapExactTokensForTokensContract = new web3.eth.Contract(IUniswapV2Router02, "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D");
-
 
 const chainId = ChainId.MAINNET;
 const USDTAddress = '0xdac17f958d2ee523a2206206994597c13d831ec7';
 const YFIAddress = '0x0bc529c00C6401aEF6D220BE8C6Ea1667F6Ad93e';
 
-function toHex(currencyAmount) {
-    return `0x${currencyAmount.raw.toString(16)}`
-}
 
 const swapUSDTtoYFI = async (amount) => {
 
@@ -43,7 +40,7 @@ const swapUSDTtoYFI = async (amount) => {
     const pair = await Fetcher.fetchPairData(usdt, yfi);
     const route = new Route([pair], usdt);
 
-    const trade = new Trade(route, new TokenAmount(usdt, JSBI.BigInt(10000)), TradeType.EXACT_INPUT);
+    const trade = new Trade(route, new TokenAmount(usdt, JSBI.BigInt(amount)), TradeType.EXACT_INPUT);
     console.log(pair.token0.symbol, "=>", pair.token1.symbol, route.midPrice.toSignificant(6));
     console.log(pair.token1.symbol, "=>", pair.token0.symbol, route.midPrice.invert().toSignificant(6));
     console.log(trade.executionPrice.toSignificant(6));
@@ -51,16 +48,11 @@ const swapUSDTtoYFI = async (amount) => {
 
     const slippageTolerance = new Percent('50', '10000'); // (0.05%) bips, 1 bip = 0.001
 
-    const amountOutMin = toHex(trade.minimumAmountOut(slippageTolerance));
-    const value = toHex(trade.inputAmount);
-    const amountIn = trade.inputAmount.raw;
+    const amountOutMin = trade.minimumAmountOut(slippageTolerance).raw.toString();
+    const amountIn = trade.inputAmount.raw.toString();
     const path = [usdt.address, yfi.address];
     const to = myAddress;
     const deadline = Math.floor(Date.now() / 1000) + 60 * 20;
-
-    const provider = ethers.getDefaultProvider('mainnet', {
-        infura: process.env.INFURA_URL
-    });
 
     const signer = new ethers.Wallet(process.env.PRIVATE_KEY);
     const account = signer.connect(provider);
@@ -97,28 +89,19 @@ const swapYFItoUSDT = async (amount) => {
 
     const pair = await Fetcher.fetchPairData(yfi, usdt);
     const route = new Route([pair], yfi);
-    const trade = new Trade(route, new TokenAmount(yfi, web3.utils.toWei("0.0001", "ether")), TradeType.EXACT_INPUT);
+    const trade = new Trade(route, new TokenAmount(yfi, JSBI.BigInt(amount)), TradeType.EXACT_INPUT);
     console.log(pair.token0.symbol, "=>", pair.token1.symbol, route.midPrice.toSignificant(6));
     console.log(pair.token1.symbol, "=>", pair.token0.symbol, route.midPrice.invert().toSignificant(6));
     console.log(trade.executionPrice.toSignificant(6));
     console.log(trade.nextMidPrice.toSignificant(6));
 
-    function toHex(currencyAmount) {
-        return `0x${currencyAmount.raw.toString(16)}`
-    }
-
     const slippageTolerance = new Percent('50', '10000'); // (0.05%) bips, 1 bip = 0.001
 
-    const amountOutMin = toHex(trade.minimumAmountOut(slippageTolerance));
-    const value = toHex(trade.inputAmount);
-    const amountIn = trade.inputAmount.raw;
+    const amountOutMin = trade.minimumAmountOut(slippageTolerance).raw.toString();
+    const amountIn = trade.inputAmount.raw.toString();
     const path = [yfi.address, usdt.address];
     const to = myAddress;
     const deadline = Math.floor(Date.now() / 1000) + 60 * 20;
-
-    const provider = ethers.getDefaultProvider('mainnet', {
-        infura: process.env.INFURA_URL
-    });
 
     const signer = new ethers.Wallet(process.env.PRIVATE_KEY);
     const account = signer.connect(provider);
@@ -150,4 +133,8 @@ const swapYFItoUSDT = async (amount) => {
 exports.swapUSDTtoYFI = swapUSDTtoYFI;
 exports.swapYFItoUSDT = swapYFItoUSDT;
 
-swapUSDTtoYFI();
+// let ten_dollarsUSDT = 10000000; // $10 USDT
+// swapUSDTtoYFI(ten_dollarsUSDT);
+
+let ten_dollarsYFI = 733760773442556 // ~$10 of YFI @ $13,628/YFI
+swapYFItoUSDT(ten_dollarsYFI);
