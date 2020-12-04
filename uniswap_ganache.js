@@ -8,21 +8,23 @@ const { ChainId, Fetcher, Token, WETH, Route, Trade, TokenAmount, TradeType, Per
 const moment = require('moment');
 const BigNumber = require('bignumber.js');
 
-/* mainnet
+/* mainnet */
 const web3 = new Web3(
     new Web3.providers.WebsocketProvider(process.env.INFURA_URL)
 );
 const { address: admin } = web3.eth.accounts.wallet.add(process.env.PRIVATE_KEY);
 const walletAddress = process.env.WALLET_ADDRESS;
-*/
 
-/* ganache */
+
+/* ganache
 const ganache = require("ganache-core");
 const web3 = new Web3('http://localhost:8545');
 
 
 const { address: admin } = web3.eth.accounts.wallet.add(process.env.PRIVATE_KEY);
 const walletAddress = process.env.WALLET_ADDRESS;
+
+*/
 
 const ERC20ABI = abis.ERC20ABI;
 const UniAbi = abis.IUniswapV2Router02;
@@ -39,7 +41,7 @@ const weth = WETH[chainId];
  * @param amount in USDT, should be in 1e6 for USDT, so 10000000 = $10 USDT
  */
 
-const swapETHtoUSDT = async (amount, approvedForUnlimitedSpend) => {
+const swapETHtoUSDT = async (amount) => {
 
     // Approve the token contract
     const usdtTokenContract = new web3.eth.Contract(ERC20ABI, usdtToken)
@@ -57,19 +59,23 @@ const swapETHtoUSDT = async (amount, approvedForUnlimitedSpend) => {
 
     const usdt = await Fetcher.fetchTokenData(chainId, usdtToken, undefined, "USDT", "USDT Token");
 
-    const pair_weth_usdt = new Pair(
-        new TokenAmount(WETH[ChainId.MAINNET], JSBI.BigInt(100)),
-        new TokenAmount(usdt, JSBI.BigInt(10))
-    );
+    // const pair_weth_usdt = new Pair(
+    //     new TokenAmount(WETH[ChainId.MAINNET], JSBI.BigInt(amount)),
+    //     new TokenAmount(usdt, JSBI.BigInt(amount))
+    // );
+
+    const pair1 = await Fetcher.fetchPairData(weth, usdt);
+    const route = await new Route([pair1], weth, usdt);
 
     const trade = new Trade(
-        new Route([pair_weth_usdt], ETHER, usdt),
-        new CurrencyAmount.ether(JSBI.BigInt(1000000000000000000)),
+        route,
+        // new CurrencyAmount.ether(JSBI.BigInt(amount)),
+        new TokenAmount(weth, JSBI.BigInt(amount)),
         TradeType.EXACT_INPUT
     );
 
 
-    const slippageTolerance = new Percent('1', '100'); // (0.05%) bips, 1 bip = 0.001
+    const slippageTolerance = new Percent('90', '10000'); // (0.05%) bips, 1 bip = 0.001
 
     const amountInMax = trade.maximumAmountIn(slippageTolerance).raw.toString();
     const amountOut = trade.outputAmount.raw.toString();
@@ -79,7 +85,7 @@ const swapETHtoUSDT = async (amount, approvedForUnlimitedSpend) => {
 
     let transactionHash;
 
-    const amountOutMin = new BigNumber(1000000000000000000);
+    const amountOutMin = new BigNumber(3000000);
 
     return await UniContract.methods.swapExactETHForTokens(
         amountOutMin,
@@ -88,9 +94,10 @@ const swapETHtoUSDT = async (amount, approvedForUnlimitedSpend) => {
         deadline
     ).send({from: walletAddress, gas: 975000, gasPrice: 50000000000})
         .on('transactionHash', function (hash) {
-            transactionHash = hash;
+            console.log(hash)
         })
         .on('receipt', async function (receipt) {
+            console.log(receipt);
             return receipt;
         })
         .on('error', (error) => {
@@ -245,7 +252,7 @@ exports.swapYFItoUSDT = swapYFItoUSDT;
 // swapUSDTtoYFI(null, 10000000, true);
 
 
-swapETHtoUSDT(10000000, true);
+swapETHtoUSDT(10000000000000000, true);
 
 
 
