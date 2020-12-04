@@ -1,140 +1,147 @@
 require("dotenv").config()
 const JSBI = require('jsbi');
 const Web3 = require('web3');
-const Tx = require('ethereumjs-tx')
-const ethers = require('ethers');
+const abis = require('./abis');
+const { mainnet: addresses } = require('./addresses');
+const unlimitedApproval = require('./utils').unlimitedApproval;
 const { ChainId, Fetcher, WETH, Route, Trade, TokenAmount, TradeType, Percent } = require('@uniswap/sdk');
+const moment = require('moment');
 
 const web3 = new Web3(
     new Web3.providers.WebsocketProvider(process.env.INFURA_URL)
 );
+
 const { address: admin } = web3.eth.accounts.wallet.add(process.env.PRIVATE_KEY);
-const myAddress = process.env.WALLET_ADDRESS;
+const walletAddress = process.env.WALLET_ADDRESS;
 
-const provider = ethers.getDefaultProvider('mainnet', {
-    infura: process.env.INFURA_URL
-});
-
-const IUniswapV2Router02 = require('./abis/uniswapV2.json');
-const  swapExactTokensForTokensContract = new web3.eth.Contract(IUniswapV2Router02, "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D");
+const ERC20ABI = abis.ERC20ABI;
+const UniAbi = abis.IUniswapV2Router02;
+const UniRouter = addresses.uniswap.router;
+const UniContract = new web3.eth.Contract(UniAbi, UniRouter);
 
 const chainId = ChainId.MAINNET;
-const USDTAddress = '0xdac17f958d2ee523a2206206994597c13d831ec7';
-const YFIAddress = '0x0bc529c00C6401aEF6D220BE8C6Ea1667F6Ad93e';
+const usdtToken = addresses.tokens.usdt;
+const yfiToken = addresses.tokens.yfi;
+const weth = WETH[chainId];
 
+/**
+ * Swaps USDT for YFI.
+ * @param amount in USDT, should be in 1e6 for USDT, so 10000000 = $10 USDT
+ */
 
-const swapUSDTtoYFI = async (amount) => {
+const swapUSDTtoYFI = async (amount, approvedForUnlimitedSpend, callback) => {
 
-    var USDTAmountinWei = web3.utils.toWei("1000", "ether").toString()
-    const ERC20ABI = require('./abis/ERC20.json');
+    if(!approvedForUnlimitedSpend) {
 
-    // Approve the LendingPoolCore address with the YFI contract
-    const USDTContract = new web3.eth.Contract(ERC20ABI, USDTAddress)
-    await USDTContract.methods
-        .approve(swapExactTokensForTokensContract, USDTAmountinWei)
+        // Approve the token contract
+        const usdtTokenContract = new web3.eth.Contract(ERC20ABI, usdtToken)
+        await usdtTokenContract.methods
+            .approve(UniContract, unlimitedApproval);
 
+    }
 
-    const usdt = await Fetcher.fetchTokenData(chainId, USDTAddress, undefined, "USDT", "USDT Token");
-    const yfi = await Fetcher.fetchTokenData(chainId, YFIAddress, undefined, "YFI", "YFI Token");
+    const usdt = await Fetcher.fetchTokenData(chainId, usdtToken, undefined, "USDT", "USDT Token");
+    const yfi = await Fetcher.fetchTokenData(chainId, yfiToken, undefined, "YFI", "YFI Token");
+    const pair0 = await Fetcher.fetchPairData(usdt, weth);
+    const pair1 = await Fetcher.fetchPairData(weth, yfi);
 
-    const pair = await Fetcher.fetchPairData(usdt, yfi);
-    const route = new Route([pair], usdt);
+    const route = new Route([pair0, pair1], usdt, yfi);
 
     const trade = new Trade(route, new TokenAmount(usdt, JSBI.BigInt(amount)), TradeType.EXACT_INPUT);
-    console.log(pair.token0.symbol, "=>", pair.token1.symbol, route.midPrice.toSignificant(6));
-    console.log(pair.token1.symbol, "=>", pair.token0.symbol, route.midPrice.invert().toSignificant(6));
-    console.log(trade.executionPrice.toSignificant(6));
-    console.log(trade.nextMidPrice.toSignificant(6));
 
     const slippageTolerance = new Percent('50', '10000'); // (0.05%) bips, 1 bip = 0.001
 
     const amountOutMin = trade.minimumAmountOut(slippageTolerance).raw.toString();
     const amountIn = trade.inputAmount.raw.toString();
-    const path = [usdt.address, yfi.address];
-    const to = myAddress;
-    const deadline = Math.floor(Date.now() / 1000) + 60 * 20;
-
-    const signer = new ethers.Wallet(process.env.PRIVATE_KEY);
-    const account = signer.connect(provider);
-
-    const uniswap = new ethers.Contract(
-        '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
-        ['function swapExactTokensForTokens(uint amountIn,uint amountOutMin,address[] calldata path,address to,uint deadline) external returns (uint[] memory amounts)'],
-        account)
-
+    const path = [usdt.address, weth.address, yfi.address];
+    const to = walletAddress;
+    const deadline = Math.floor(Date.now() / 1000) + 60 * 20; // 20 minutes
 
     console.log('Sending transaction...')
 
-    const tx = await uniswap.swapExactTokensForTokens(
-
+    const tx = await UniContract.methods.swapExactTokensForTokens(
         amountIn,
         amountOutMin,
         path,
         to,
-        deadline,
-        { gasPrice: 60e9 }
-
-    );
-    console.log(`Transaction hash: ${tx.hash}`);
-
-    const receipt = await tx.wait();
-    console.log(`Transaction was mined in block ${receipt.blockNumber}`);
+        deadline
+    ).send({from: walletAddress, gas: 976677})
+        .on('transactionHash', function(hash){
+            console.log(`${moment().format()} Transaction hash:  ${hash}`);
+        })
+        .on('receipt', function(receipt){
+            console.log(`${moment().format()} Transaction was mined in block ${receipt.blockNumber}`);
+            callback(receipt);
+        })
+        .on('error', console.error);
 
 }
 
-const swapYFItoUSDT = async (amount) => {
+/**
+ * Swaps YFI for USDT.
+ * @param amount in YFI, should be in 1e18 for Wei of YFI
+ */
 
-    const usdt = await Fetcher.fetchTokenData(chainId, USDTAddress, undefined, "USDT", "USDT Token");
-    const yfi = await Fetcher.fetchTokenData(chainId, YFIAddress, undefined, "YFI", "YFI Token");
+const swapYFItoUSDT = async (amount, approvedForUnlimitedSpend, callback) => {
 
-    const pair = await Fetcher.fetchPairData(yfi, usdt);
-    const route = new Route([pair], yfi);
+    if(!approvedForUnlimitedSpend) {
+
+        // Approve the token contract
+        const yfiTokenContract = new web3.eth.Contract(ERC20ABI, yfiToken)
+        await yfiTokenContract.methods
+            .approve(UniContract, unlimitedApproval);
+
+    }
+
+    const usdt = await Fetcher.fetchTokenData(chainId, usdtToken, undefined, "USDT", "USDT Token");
+    const yfi = await Fetcher.fetchTokenData(chainId, yfiToken, undefined, "YFI", "YFI Token");
+    const pair0 = await Fetcher.fetchPairData(yfi, weth);
+    const pair1 = await Fetcher.fetchPairData(weth, usdt);
+
+    const route = new Route([pair0, pair1], yfi, usdt);
+
     const trade = new Trade(route, new TokenAmount(yfi, JSBI.BigInt(amount)), TradeType.EXACT_INPUT);
-    console.log(pair.token0.symbol, "=>", pair.token1.symbol, route.midPrice.toSignificant(6));
-    console.log(pair.token1.symbol, "=>", pair.token0.symbol, route.midPrice.invert().toSignificant(6));
-    console.log(trade.executionPrice.toSignificant(6));
-    console.log(trade.nextMidPrice.toSignificant(6));
 
     const slippageTolerance = new Percent('50', '10000'); // (0.05%) bips, 1 bip = 0.001
 
     const amountOutMin = trade.minimumAmountOut(slippageTolerance).raw.toString();
     const amountIn = trade.inputAmount.raw.toString();
-    const path = [yfi.address, usdt.address];
-    const to = myAddress;
+    const path = [yfi.address, weth.address, usdt.address];
+    const to = walletAddress;
     const deadline = Math.floor(Date.now() / 1000) + 60 * 20;
-
-    const signer = new ethers.Wallet(process.env.PRIVATE_KEY);
-    const account = signer.connect(provider);
-
-    const uniswap = new ethers.Contract(
-        '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
-        ['function swapExactTokensForTokens(uint amountIn,uint amountOutMin,address[] calldata path,address to,uint deadline) external returns (uint[] memory amounts)'],
-        account);
 
     console.log('Sending transaction...')
 
-    const tx = await uniswap.swapExactTokensForTokens(
-
+    const tx = await UniContract.methods.swapExactTokensForTokens(
         amountIn,
         amountOutMin,
         path,
         to,
-        deadline,
-        { gasPrice: 60e9 }
-
-    );
-    console.log(`Transaction hash: ${tx.hash}`);
-
-    const receipt = await tx.wait();
-    console.log(`Transaction was mined in block ${receipt.blockNumber}`);
+        deadline
+    ).send({from: walletAddress, gas: 976677})
+        .on('transactionHash', function(hash){
+            console.log(`${moment().format()} Transaction hash: ${hash}`);
+        })
+        .on('receipt', function(receipt){
+            console.log(`${moment().format()} Transaction was mined in block ${receipt.blockNumber}`);
+            callback(receipt);
+        })
+        .on('error', console.error);
 
 }
 
 exports.swapUSDTtoYFI = swapUSDTtoYFI;
 exports.swapYFItoUSDT = swapYFItoUSDT;
 
-// let ten_dollarsUSDT = 10000000; // $10 USDT
-// swapUSDTtoYFI(ten_dollarsUSDT);
 
-let ten_dollarsYFI = 733760773442556 // ~$10 of YFI @ $13,628/YFI
-swapYFItoUSDT(ten_dollarsYFI);
+
+// // 10000000; // $10 USDT
+// swapUSDTtoYFI(10000000, true, (receipt) => {
+//     console.log(receipt);
+// });
+
+// 733760773442556 // ~$10 of YFI @ $13,628/YFI
+// 714854008000000
+swapYFItoUSDT(714854008000000, true, (receipt) => {
+    console.log(receipt);
+});
