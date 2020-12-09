@@ -1,0 +1,3 @@
+ganache-cli -f https://mainnet.infura.io/v3/47a7cb097c99498eb31ed9cb91b7b589  \
+-m "clutch captain shoe salt awake harvest setup primary inmate ugly among become" \
+-i 999 -u 0xa0df350d2637096571F7A701CBc1C5fdE30dF76A

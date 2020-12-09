@@ -8,15 +8,17 @@ const { ChainId, Fetcher, Token, WETH, Route, Trade, TokenAmount, TradeType, Per
 const moment = require('moment');
 const BigNumber = require('bignumber.js');
 
-/* mainnet */
+/* mainnet
 const web3 = new Web3(
     new Web3.providers.WebsocketProvider(process.env.INFURA_URL)
 );
 const { address: admin } = web3.eth.accounts.wallet.add(process.env.PRIVATE_KEY);
 const walletAddress = process.env.WALLET_ADDRESS;
 
+*/
 
-/* ganache
+
+/* ganache */
 const ganache = require("ganache-core");
 const web3 = new Web3('http://localhost:8545');
 
@@ -24,7 +26,7 @@ const web3 = new Web3('http://localhost:8545');
 const { address: admin } = web3.eth.accounts.wallet.add(process.env.PRIVATE_KEY);
 const walletAddress = process.env.WALLET_ADDRESS;
 
-*/
+
 
 const ERC20ABI = abis.ERC20ABI;
 const UniAbi = abis.IUniswapV2Router02;
@@ -43,136 +45,156 @@ const weth = WETH[chainId];
 
 const swapETHtoUSDT = async (amount) => {
 
-    // Approve the token contract
-    const usdtTokenContract = new web3.eth.Contract(ERC20ABI, usdtToken)
-    await usdtTokenContract.methods
-        .approve(UniContract, new BigNumber(2).pow(256).minus(1));
+    return new Promise (async (response, reject) => {
 
-    await usdtTokenContract.methods
-        .approve(walletAddress, new BigNumber(2).pow(256).minus(1));
+        amount = amount.toString();
 
-    let availableBalanceETH = await web3.eth.getBalance(walletAddress);
+        let availableBalanceETH = await web3.eth.getBalance(walletAddress);
 
-    console.log('Available ETH in Wallet', availableBalanceETH); // plenty of ETH here!
+        console.log('Available ETH in Wallet', availableBalanceETH); // plenty of ETH here!
 
-    let accounts = await web3.eth.getAccounts();
+        const usdt = await Fetcher.fetchTokenData(chainId, usdtToken, undefined, "USDT", "USDT Token");
 
-    const usdt = await Fetcher.fetchTokenData(chainId, usdtToken, undefined, "USDT", "USDT Token");
+        const pair1 = await Fetcher.fetchPairData(weth, usdt);
+        const route = await new Route([pair1], weth, usdt);
 
-    // const pair_weth_usdt = new Pair(
-    //     new TokenAmount(WETH[ChainId.MAINNET], JSBI.BigInt(amount)),
-    //     new TokenAmount(usdt, JSBI.BigInt(amount))
-    // );
+        const trade = new Trade(
+            route,
+            new TokenAmount(weth, amount),
+            TradeType.EXACT_INPUT
+        );
 
-    const pair1 = await Fetcher.fetchPairData(weth, usdt);
-    const route = await new Route([pair1], weth, usdt);
+        const slippageTolerance = new Percent('50', '10000'); // (0.05%) bips, 1 bip = 0.001
 
-    const trade = new Trade(
-        route,
-        // new CurrencyAmount.ether(JSBI.BigInt(amount)),
-        new TokenAmount(weth, JSBI.BigInt(amount)),
-        TradeType.EXACT_INPUT
-    );
+        const amountOut = trade.minimumAmountOut(slippageTolerance).raw.toString()
+        const path = [weth.address, usdt.address];
+        const to = walletAddress;
+        const deadline = Math.floor(Date.now() / 1000) + 60 * 20; // 20 minutes
 
+        return await UniContract.methods.swapExactETHForTokens(
+            amountOut,
+            path,
+            to,
+            deadline
+        ).send({from: walletAddress, gas: 975000, gasPrice: 50000000000, value: amount})
+            .on('transactionHash', function (hash) {
+                console.log(hash)
+            })
+            .on('receipt', async function (receipt) {
+                console.log(receipt);
+                return response(receipt);
+            })
+            .on('error', (error) => {
+                let message = error.message;
+                return reject(new Error('ERROR swapping ETH to USDT: ' + message));
+            });
 
-    const slippageTolerance = new Percent('90', '10000'); // (0.05%) bips, 1 bip = 0.001
-
-    const amountInMax = trade.maximumAmountIn(slippageTolerance).raw.toString();
-    const amountOut = trade.outputAmount.raw.toString();
-    const path = [weth.address, usdt.address];
-    const to = walletAddress;
-    const deadline = Math.floor(Date.now() / 1000) + 60 * 20; // 20 minutes
-
-    let transactionHash;
-
-    const amountOutMin = new BigNumber(3000000);
-
-    return await UniContract.methods.swapExactETHForTokens(
-        amountOutMin,
-        path,
-        to,
-        deadline
-    ).send({from: walletAddress, gas: 975000, gasPrice: 50000000000})
-        .on('transactionHash', function (hash) {
-            console.log(hash)
-        })
-        .on('receipt', async function (receipt) {
-            console.log(receipt);
-            return receipt;
-        })
-        .on('error', (error) => {
-            let message = error.message;
-            return new Error('ERROR swapping USD to YFI: ' + message);
-        });
+    })
 
 }
+
+
+const swapETHtoYFI = async (amount) => {
+
+    return new Promise (async (resolve, reject) => {
+
+        amount = amount.toString()
+
+        let availableBalanceETH = await web3.eth.getBalance(walletAddress);
+
+        console.log('Available ETH in Wallet', availableBalanceETH); // plenty of ETH here!
+
+        const yfi = await Fetcher.fetchTokenData(chainId, yfiToken, undefined, "YFI", "YFI Token");
+
+        const pair1 = await Fetcher.fetchPairData(weth, yfi);
+        const route = await new Route([pair1], weth, yfi);
+
+        const trade = new Trade(
+            route,
+            new TokenAmount(weth, amount),
+            TradeType.EXACT_INPUT
+        );
+
+        const slippageTolerance = new Percent('50', '10000'); // (0.05%) bips, 1 bip = 0.001
+
+        const amountOut = trade.minimumAmountOut(slippageTolerance).raw.toString()
+        const path = [weth.address, yfi.address];
+        const to = walletAddress;
+        const deadline = Math.floor(Date.now() / 1000) + 60 * 20; // 20 minutes
+
+        return await UniContract.methods.swapExactETHForTokens(
+            amountOut,
+            path,
+            to,
+            deadline
+        ).send({from: walletAddress, gas: 975000, gasPrice: 50000000000, value: amount})
+            .on('transactionHash', function (hash) {
+                console.log(hash)
+            })
+            .on('receipt', async function (receipt) {
+                console.log(receipt);
+                return resolve(receipt);
+            })
+            .on('error', (error) => {
+                let message = error.message;
+                return reject(new Error('ERROR swapping ETH to USDT: ' + message));
+            });
+
+    })
+
+}
+
 
 /**
  * Swaps USDT for YFI.
  * @param amount in USDT, should be in 1e6 for USDT, so 10000000 = $10 USDT
  */
 
-const swapUSDTtoYFI = async (amount, approvedForUnlimitedSpend) => {
+const swapUSDTtoYFI = async (amount, approvedForUnlimitedSpend, callback) => {
 
-        if (!approvedForUnlimitedSpend) {
+    if(!approvedForUnlimitedSpend) {
 
-            // Approve the token contract
-            const usdtTokenContract = new web3.eth.Contract(ERC20ABI, usdtToken)
-            await usdtTokenContract.methods
-                .approve(UniContract, new BigNumber(2).pow(256).minus(1));
+        // Approve the token contract
+        const usdtTokenContract = new web3.eth.Contract(ERC20ABI, usdtToken)
+        await usdtTokenContract.methods
+            .approve(UniContract, unlimitedApproval);
 
-        }
+    }
 
-        const usdt = await Fetcher.fetchTokenData(chainId, usdtToken, undefined, "USDT", "USDT Token");
-        const yfi = await Fetcher.fetchTokenData(chainId, yfiToken, undefined, "YFI", "YFI Token");
-        const pair0 = await Fetcher.fetchPairData(usdt, weth);
-        const pair1 = await Fetcher.fetchPairData(weth, yfi);
+    const usdt = await Fetcher.fetchTokenData(chainId, usdtToken, undefined, "USDT", "USDT Token");
+    const yfi = await Fetcher.fetchTokenData(chainId, yfiToken, undefined, "YFI", "YFI Token");
+    const pair0 = await Fetcher.fetchPairData(usdt, weth);
+    const pair1 = await Fetcher.fetchPairData(weth, yfi);
 
-        const route = new Route([pair0, pair1], usdt, yfi);
+    const route = new Route([pair0, pair1], usdt, yfi);
 
-        // trade USDT for exact amount of YFI needed to payback the loan
-        const uniTrade = new Trade(route, new TokenAmount(yfi, JSBI.BigInt(amount)), TradeType.EXACT_OUTPUT);
-        const slippageTolerance = new Percent('50', '10000'); // (0.05%) bips, 1 bip = 0.001
+    const trade = new Trade(route, new TokenAmount(usdt, JSBI.BigInt(amount)), TradeType.EXACT_INPUT);
 
-        const amountInMax = uniTrade.maximumAmountIn(slippageTolerance).raw.toString();
-        const amountOut = uniTrade.outputAmount.raw.toString();
+    const slippageTolerance = new Percent('90', '10000'); // (0.05%) bips, 1 bip = 0.001
 
+    const amountOutMin = trade.minimumAmountOut(slippageTolerance).raw.toString();
+    const amountIn = trade.inputAmount.raw.toString();
+    const path = [usdt.address, weth.address, yfi.address];
+    const to = walletAddress;
+    const deadline = Math.floor(Date.now() / 1000) + 60 * 20; // 20 minutes
 
-        let tokenContract = new web3.eth.Contract(ERC20ABI, addresses.tokens.usdt);
-        let availableBalanceUSDT = await tokenContract.methods.balanceOf(walletAddress).call().catch((error) => {
-            console.log(error);
-        });
+    console.log('Sending transaction...')
 
-        if (new BigNumber(availableBalanceUSDT).isLessThan(new BigNumber(amountOut))) {
-            let message = 'ERROR: Not enough money in wallet!';
-            return new Error(message );
-        }
-
-        const path = [usdt.address, weth.address, yfi.address];
-        const to = walletAddress;
-        const deadline = Math.floor(Date.now() / 1000) + 60 * 20; // 20 minutes
-
-
-        let transactionHash;
-
-        return await UniContract.methods.swapTokensForExactTokens(
-            amountOut,
-            amountInMax,
-            path,
-            to,
-            deadline
-        ).send({from: walletAddress, gas: 975000, gasPrice: process.env.GAS_PRICE})
-            .on('transactionHash', function (hash) {
-                transactionHash = hash;
-            })
-            .on('receipt', async function (receipt) {
-                return receipt;
-            })
-            .on('error', (error) => {
-                let message = error.message;
-                return new Error('ERROR swapping USD to YFI: ' + message);
-            });
-
+    const tx = await UniContract.methods.swapExactTokensForTokens(
+        amountIn,
+        amountOutMin,
+        path,
+        to,
+        deadline
+    ).send({from: walletAddress, gas: 975000, gasPrice: 50000000000})
+        .on('transactionHash', function(hash){
+            console.log(`${moment().format()} Transaction hash:  ${hash}`);
+        })
+        .on('receipt', function(receipt){
+            console.log(`${moment().format()} Transaction was mined in block ${receipt.blockNumber}`);
+            callback(receipt);
+        })
+        .on('error', console.error);
 
 }
 
@@ -183,16 +205,27 @@ const swapUSDTtoYFI = async (amount, approvedForUnlimitedSpend) => {
 
 const swapYFItoUSDT = async (amount, approvedForUnlimitedSpend) => {
 
-    let tryToSwapYFItoUSDT = async () => {
 
+        const accounts = await web3.eth.getAccounts();
+
+            /*
         if (!approvedForUnlimitedSpend) {
 
             // Approve the token contract
             const yfiTokenContract = new web3.eth.Contract(ERC20ABI, yfiToken);
-            await yfiTokenContract.methods
-                .approve(UniContract, new BigNumber(2).pow(256).minus(1));
+
+            let approvalTx = await yfiTokenContract.methods
+                .approve(walletAddress, new BigNumber(2).pow(256).minus(1))
+                .send({from: walletAddress, gas: 975000, gasPrice: process.env.GAS_PRICE})
+                .catch((error) => {
+                    console.log(error);
+                });
+
+            console.log(approvalTx);
 
         }
+
+        */
 
         const usdt = await Fetcher.fetchTokenData(chainId, usdtToken, undefined, "USDT", "USDT Token");
         const yfi = await Fetcher.fetchTokenData(chainId, yfiToken, undefined, "YFI", "YFI Token");
@@ -206,12 +239,12 @@ const swapYFItoUSDT = async (amount, approvedForUnlimitedSpend) => {
         const amountIn = uniTrade.inputAmount.raw.toString();
 
         // make sure we have enough in wallet to do the swap
-        let availableBalanceYFI = await utils.check_token_balance(addresses.tokens.yfi);
+        // let availableBalanceYFI = await utils.check_token_balance(addresses.tokens.yfi);
 
-        if (new BigNumber(availableBalanceYFI).isLessThan(new BigNumber(amountIn))) {
-            let message = 'ERROR: Not enough money in wallet!';
-            return new Error(message );
-        }
+        // if (new BigNumber(availableBalanceYFI).isLessThan(new BigNumber(amountIn))) {
+        //     let message = 'ERROR: Not enough money in wallet!';
+        //     return new Error(message );
+        // }
 
         const path = [yfi.address, weth.address, usdt.address];
         const to = walletAddress;
@@ -225,7 +258,7 @@ const swapYFItoUSDT = async (amount, approvedForUnlimitedSpend) => {
             path,
             to,
             deadline
-        ).send({from: walletAddress, gas: 975000, gasPrice: process.env.GAS_PRICE})
+        ).send({from: walletAddress, gas: 975000, gasPrice: process.env.GAS_PRICE, value: amount})
             .on('transactionHash', function (hash) {
                 transactionHash = hash;
             })
@@ -236,10 +269,9 @@ const swapYFItoUSDT = async (amount, approvedForUnlimitedSpend) => {
                 return new Error('ERROR swapping YFI to USD: ' + error);
             });
 
-    };
 
 
-    return await utils.retryOnError(tryToSwapYFItoUSDT, 3);
+
 
 }
 
@@ -248,17 +280,20 @@ exports.swapYFItoUSDT = swapYFItoUSDT;
 
 
 
+
+
+
+// swapETHtoUSDT(20000000000000000000, true);
+// swapETHtoYFI(48521803976069016000, true);
+
+
 // 10000000; // $10 USDT
-// swapUSDTtoYFI(null, 10000000, true);
-
-
-swapETHtoUSDT(10000000000000000, true);
-
-
-
+// swapUSDTtoYFI(1000000000, true, (receipt) => {
+//     console.log(receipt);
+// });
 
 // 733760773442556 // ~$10 of YFI @ $13,628/YFI
-// swapYFItoUSDT(null, 714854008000000, true);
+swapYFItoUSDT(714854008000000, false);
 
 
 
